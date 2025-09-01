@@ -1,1 +1,231 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <title>Jogo 3D de Tiro - Three.js FPS</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    #hud {
+      position: absolute; top: 10px; left: 10px; color: white; z-index: 10; font-family: sans-serif; background: rgba(0,0,0,0.4); padding: 8px; border-radius: 6px;
+    }
+    #hud button { margin-right: 8px; }
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <span id="ammo"></span> |
+    <span id="score"></span>
+    <br>
+    <button onclick="reloadWeapon()">Recarregar [R]</button>
+    <span id="msg"></span>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.153.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.153.0/examples/js/controls/PointerLockControls.js"></script>
+  <script>
+    // Cena e câmera
+    let scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x223355);
 
+    let camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+
+    let renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Iluminação
+    let light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(10, 20, 10);
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0x404040));
+
+    // Chão
+    let floorGeometry = new THREE.BoxGeometry(100, 1, 100);
+    let floorMaterial = new THREE.MeshPhongMaterial({ color: 0x222222 });
+    let floor = new THREE.Mesh(floorGeometry, floorMaterial);
+    floor.position.y = -1;
+    scene.add(floor);
+
+    // HUD
+    let ammoHud = document.getElementById("ammo");
+    let scoreHud = document.getElementById("score");
+    let msgHud = document.getElementById("msg");
+    let score = 0;
+
+    // Jogador e controles
+    let controls = new THREE.PointerLockControls(camera, document.body);
+    document.body.addEventListener('click', () => controls.lock());
+    camera.position.set(0, 2, 5);
+
+    // Modelagem detalhada da arma
+    function createGun() {
+      let gun = new THREE.Group();
+
+      // Corpo principal
+      let body = new THREE.Mesh(
+        new THREE.BoxGeometry(0.7, 0.2, 1.3),
+        new THREE.MeshPhongMaterial({ color: 0x444444 })
+      );
+      body.position.set(0, -0.15, -1.0);
+      gun.add(body);
+
+      // Cano
+      let barrel = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.09, 0.09, 1.1, 16),
+        new THREE.MeshPhongMaterial({ color: 0x888888 })
+      );
+      barrel.rotation.x = Math.PI / 2;
+      barrel.position.set(0, -0.12, -1.7);
+      gun.add(barrel);
+
+      // Empunhadura
+      let grip = new THREE.Mesh(
+        new THREE.BoxGeometry(0.22, 0.55, 0.22),
+        new THREE.MeshPhongMaterial({ color: 0x222222 })
+      );
+      grip.position.set(0, -0.45, -0.6);
+      gun.add(grip);
+
+      // Detalhe mira
+      let sight = new THREE.Mesh(
+        new THREE.BoxGeometry(0.13, 0.09, 0.22),
+        new THREE.MeshPhongMaterial({ color: 0x00ffdd })
+      );
+      sight.position.set(0, -0.05, -1.35);
+      gun.add(sight);
+
+      // Detalhe gatilho
+      let trigger = new THREE.Mesh(
+        new THREE.TorusGeometry(0.05, 0.014, 8, 16),
+        new THREE.MeshPhongMaterial({ color: 0xffcc00 })
+      );
+      trigger.rotation.x = Math.PI / 2;
+      trigger.position.set(0, -0.25, -0.76);
+      gun.add(trigger);
+
+      gun.position.set(0.45, -0.35, -0.9); // Visível na câmera
+      return gun;
+    }
+    let gun = createGun();
+    camera.add(gun);
+
+    // Estado da arma
+    let maxAmmo = 8;
+    let ammo = maxAmmo;
+    let reserveAmmo = 32;
+
+    // Inimigos
+    let enemies = [];
+    function spawnEnemy() {
+      let enemyGeo = new THREE.SphereGeometry(0.5, 16, 16);
+      let enemyMat = new THREE.MeshPhongMaterial({ color: 0xff4444 });
+      let enemy = new THREE.Mesh(enemyGeo, enemyMat);
+      enemy.position.set(
+        (Math.random()-0.5)*30,
+        0.5,
+        -Math.random()*30-10
+      );
+      enemy.userData.alive = true;
+      scene.add(enemy);
+      enemies.push(enemy);
+    }
+    for (let i=0; i<10; i++) spawnEnemy();
+
+    // Atualiza HUD
+    function updateHud() {
+      ammoHud.textContent = `Munição: ${ammo} / ${reserveAmmo}`;
+      scoreHud.textContent = `Pontos: ${score}`;
+    }
+    updateHud();
+
+    // Atirar
+    function shoot() {
+      if (ammo <= 0) {
+        msgHud.textContent = "Sem munição! Recarregue.";
+        return;
+      }
+      ammo--;
+      msgHud.textContent = "";
+      updateHud();
+
+      // Raycast
+      let raycaster = new THREE.Raycaster();
+      let dir = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+      raycaster.set(camera.position, dir);
+      let intersects = raycaster.intersectObjects(enemies);
+      for (let i = 0; i < intersects.length; i++) {
+        let obj = intersects[i].object;
+        if (obj.userData.alive) {
+          obj.userData.alive = false;
+          obj.material.color.set(0x222222);
+          score += 100;
+          updateHud();
+          msgHud.textContent = "Inimigo abatido!";
+          break;
+        }
+      }
+    }
+
+    // Recarregar
+    function reloadWeapon() {
+      if (ammo === maxAmmo || reserveAmmo === 0) {
+        msgHud.textContent = "Não há necessidade ou munição!";
+        return;
+      }
+      let needed = maxAmmo - ammo;
+      let take = Math.min(needed, reserveAmmo);
+      ammo += take;
+      reserveAmmo -= take;
+      msgHud.textContent = "Recarregado!";
+      updateHud();
+    }
+    window.reloadWeapon = reloadWeapon;
+
+    // Controles de tiro e recarregar
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' || e.code === 'Mouse0') shoot();
+      if (e.code === 'KeyR') reloadWeapon();
+    });
+
+    // Movimentação simples
+    let move = { f:0, b:0, l:0, r:0 };
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyW') move.f=1;
+      if (e.code === 'KeyS') move.b=1;
+      if (e.code === 'KeyA') move.l=1;
+      if (e.code === 'KeyD') move.r=1;
+    });
+    window.addEventListener('keyup', (e) => {
+      if (e.code === 'KeyW') move.f=0;
+      if (e.code === 'KeyS') move.b=0;
+      if (e.code === 'KeyA') move.l=0;
+      if (e.code === 'KeyD') move.r=0;
+    });
+
+    // Loop de animação
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Movimentação
+      let speed = 0.14;
+      let dir = new THREE.Vector3();
+      if (move.f) dir.z -= speed;
+      if (move.b) dir.z += speed;
+      if (move.l) dir.x -= speed;
+      if (move.r) dir.x += speed;
+      controls.moveRight(dir.x);
+      controls.moveForward(dir.z);
+
+      // Inimigos se movem aleatoriamente
+      enemies.forEach(enemy => {
+        if (enemy.userData.alive) {
+          enemy.position.x += (Math.random()-0.5)*0.05;
+          enemy.position.z += (Math.random()-0.5)*0.05;
+        }
+      });
+
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
